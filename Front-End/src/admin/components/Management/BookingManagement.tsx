@@ -8,7 +8,16 @@ import { ModuleAccess } from '../../utils/permissions';
 import { useAdminTheme } from '../AdminShell';
 
 const fullAccess: ModuleAccess = { canView: true, canEdit: true, canDelete: true, canApprove: true, canExport: false };
-const statuses = ['', 'PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED'];
+const statuses = ['', 'PENDING', 'CONFIRMED', 'CHECKED_IN', 'PAYMENT_PENDING', 'COMPLETED', 'CANCELLED'];
+
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  PENDING: { label: 'Chờ xử lý', color: '#F59E0B' },
+  CONFIRMED: { label: 'Đã xác nhận', color: '#3B82F6' },
+  CHECKED_IN: { label: 'Đã nhận phòng', color: '#2563EB' },
+  PAYMENT_PENDING: { label: 'Chờ thanh toán', color: '#D97706' },
+  COMPLETED: { label: 'Hoàn tất', color: '#10B981' },
+  CANCELLED: { label: 'Đã hủy', color: '#EF4444' },
+};
 
 export const BookingManagement = ({ permissions = fullAccess }: { permissions?: ModuleAccess }) => {
   const { isLight } = useAdminTheme();
@@ -105,12 +114,12 @@ export const BookingManagement = ({ permissions = fullAccess }: { permissions?: 
       key: 'status',
       label: 'Trạng thái',
       render: (status: string) => {
-        const color = status === 'CANCELLED' ? '#EF4444' : status === 'PENDING' ? '#F59E0B' : status === 'COMPLETED' ? '#10B981' : '#3B82F6';
+        const config = STATUS_CONFIG[status] || { label: status || 'Không rõ', color: '#64748B' };
+        const color = config.color;
         const bgColor = `${color}1A`;
-        const label = status === 'CONFIRMED' ? 'Đã xác nhận' : status === 'COMPLETED' ? 'Hoàn tất' : status === 'CANCELLED' ? 'Đã hủy' : 'Chờ xử lý';
         return (
           <View style={[styles.badge, { backgroundColor: bgColor }]}>
-            <Text style={[styles.badgeText, { color }]}>{label}</Text>
+            <Text style={[styles.badgeText, { color }]}>{config.label}</Text>
           </View>
         );
       },

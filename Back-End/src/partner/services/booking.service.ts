@@ -1,4 +1,5 @@
 import prisma from '../../login/lib/prisma';
+import { updateBookingStatusWithInventory } from '../../shared/services/lodging-sync.service';
 import {
   NotFoundError,
   ForbiddenError,
@@ -43,14 +44,16 @@ const normalizeBooking = (booking: any) => ({
   },
 
   room: {
-    name: booking.room?.name || 'Phòng tiêu chuẩn',
+    name: booking.room?.name || booking.roomType?.name || 'Phòng tiêu chuẩn',
   },
 
   property: {
-    id: booking.property?.id || booking.room?.property?.id || '',
+    id: booking.property?.id || booking.hotel?.id || booking.room?.property?.id || booking.roomType?.hotel?.id || '',
     name:
       booking.property?.name ||
+      booking.hotel?.name ||
       booking.room?.property?.name ||
+      booking.roomType?.hotel?.name ||
       'Cơ sở lưu trú',
   },
 });
@@ -90,7 +93,26 @@ export class BookingService {
           },
         },
 
+        roomType: {
+          select: {
+            name: true,
+            hotel: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+
         property: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+
+        hotel: {
           select: {
             id: true,
             name: true,
@@ -153,35 +175,25 @@ export class BookingService {
       throw new ForbiddenError('Bạn không có quyền cập nhật đơn đặt phòng này');
     }
 
-    const updated = await prisma.booking.update({
-      where: {
-        id: bookingId,
-      },
-      data: {
-        status: normalizedStatus,
-      },
-      include: {
-        user: {
-          select: {
-            username: true,
-            email: true,
-            phone: true,
-          },
-        },
+    const updated = await prisma.$transaction(async (tx) => {
+      const updatedBooking = await updateBookingStatusWithInventory(tx, bookingId, normalizedStatus);
 
-        room: {
-          select: {
-            name: true,
+      if (normalizedStatus === 'COMPLETED') {
+        await tx.payment.updateMany({
+          where: {
+            bookingId,
+            status: 'PENDING',
           },
-        },
+          data: {
+            status: 'PAID',
+            paidAt: new Date(),
+            failureReason: null,
+            failureMessage: null,
+          },
+        });
+      }
 
-        property: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+      return updatedBooking;
     });
 
     return normalizeBooking(updated);

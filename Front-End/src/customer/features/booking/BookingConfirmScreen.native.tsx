@@ -31,13 +31,20 @@ import BookingSuccessView from '@/src/customer/components/booking/BookingSuccess
 import BookingQrPaymentView from '@/src/customer/components/booking/BookingQrPaymentView';
 import BookingFormView from '@/src/customer/components/booking/BookingFormView';
 import RoomDetailModal from '@/src/customer/components/rooms/RoomDetailModal';
-import { bookingsApi, type BookingPaymentQr, type CreateQrBookingResponse } from '@/src/customer/services/booking/bookings.api';
+import {
+  bookingsApi,
+  type BookingPaymentQr,
+  type CheckoutVoucher,
+  type CreateQrBookingResponse,
+  type ValidateVoucherResponse,
+} from '@/src/customer/services/booking/bookings.api';
 import { hotelsApi } from '@/src/customer/services/hotels/hotels.api';
 import { getMyProfile } from '@/src/customer/core/api/profile.api';
 import { useAuth } from '@/src/customer/hooks/useAuth';
 import { useCustomerBack } from '@/src/customer/navigation/useCustomerBack';
 import { getParamText } from '@/src/customer/navigation/routeParams';
 import { useThemeContext } from '@/src/customer/theme/ThemeContext';
+import { useVoucherCollect } from '@/src/customer/context/VoucherCollectContext';
 import { getBookingDurationLabel } from '@/src/customer/utils/rooms/roomDisplay';
 import { getStayHubPaymentView } from '@/src/customer/utils/booking/sepay';
 import { styles, PRIMARY, PRIMARY_FILL, TEXT_DARK, TEXT_MUTED, BORDER, SURFACE, PAGE_BG, SUCCESS } from '@/src/customer/styles/booking/bookingConfirm.styles';
@@ -56,6 +63,7 @@ export default function BookingConfirmScreen() {
   const insets = useSafeAreaInsets();
   const { currentTheme } = useThemeContext();
   const { user } = useAuth();
+  const { collected } = useVoucherCollect();
   const params = useLocalSearchParams<{
     hotelId?: string;
     hotelName?: string;
@@ -86,14 +94,21 @@ export default function BookingConfirmScreen() {
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState<PaymentMethodId | null>('vietqr');
   const [selectedRoomForDetail, setSelectedRoomForDetail] = useState<Room | null>(null);
   const [roomDetailLoading, setRoomDetailLoading] = useState(false);
+  const [availableVouchers, setAvailableVouchers] = useState<CheckoutVoucher[]>([]);
+  const [voucherCode, setVoucherCode] = useState('');
+  const [appliedVoucher, setAppliedVoucher] = useState<ValidateVoucherResponse | null>(null);
+  const [voucherLoading, setVoucherLoading] = useState(false);
+  const [voucherApplying, setVoucherApplying] = useState(false);
+  const [voucherError, setVoucherError] = useState<string | null>(null);
   const isWebLayout = false;
 
+  const hotelId = getParamText(params.hotelId);
+  const roomId = getParamText(params.roomId);
   const hotelName = getParamText(params.hotelName) || 'Khách sạn';
   const roomName = getParamText(params.roomName) || 'STANDARD ROOM';
   const hotelAddress = getParamText(params.hotelAddress) || 'Địa chỉ khách sạn đang cập nhật';
   const roomImage = getParamText(params.roomImage) || DEFAULT_ROOM_IMAGE;
   const amount = Math.round(Number(getParamText(params.price)) || 0);
-  const price = formatMoney(String(amount));
   const bookingType = getParamText(params.bookingType) || 'Theo giờ';
   const durationLabel = getBookingDurationLabel(bookingType, getParamText(params.hours));
   const checkIn = useMemo(() => parseBookingPoint(getParamText(params.checkIn)), [params.checkIn]);
@@ -134,9 +149,119 @@ export default function BookingConfirmScreen() {
     }).catch(() => {});
   }, []);
 
+  const collectedVoucherCodes = useMemo(
+    () => new Set(collected.map(item => item.code.trim().toUpperCase()).filter(Boolean)),
+    [collected],
+  );
+
+  const sortedAvailableVouchers = useMemo(
+    () => [...availableVouchers].sort((a, b) => {
+      const aSaved = collectedVoucherCodes.has(String(a.code).toUpperCase());
+      const bSaved = collectedVoucherCodes.has(String(b.code).toUpperCase());
+      if (aSaved !== bSaved) return aSaved ? -1 : 1;
+      return Number(b.discount || 0) - Number(a.discount || 0);
+    }),
+    [availableVouchers, collectedVoucherCodes],
+  );
+
+  const voucherDiscountAmount = appliedVoucher
+    ? Math.round(Number(appliedVoucher.discount || 0))
+    : 0;
+  const finalAmount = appliedVoucher
+    ? Math.round(Number(appliedVoucher.finalTotal || amount))
+    : amount;
+  const finalPrice = formatMoney(String(finalAmount));
+  const voucherDiscountText = appliedVoucher
+    ? formatMoney(String(voucherDiscountAmount))
+    : null;
+
+  useEffect(() => {
+    let active = true;
+
+    setAppliedVoucher(null);
+    setVoucherError(null);
+
+    if (!hotelId || !roomId || amount <= 0) {
+      setAvailableVouchers([]);
+      return () => {
+        active = false;
+      };
+    }
+
+    setVoucherLoading(true);
+    bookingsApi
+      .getCheckoutVouchers(hotelId, { roomTypeId: roomId, subtotal: amount })
+      .then(vouchers => {
+        if (active) setAvailableVouchers(vouchers);
+      })
+      .catch(error => {
+        if (!active) return;
+        setAvailableVouchers([]);
+        setVoucherError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setVoucherLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [amount, hotelId, roomId]);
+
+  const handleVoucherCodeChange = useCallback((value: string) => {
+    const normalized = value.toUpperCase();
+    setVoucherCode(normalized);
+    setVoucherError(null);
+    if (appliedVoucher && normalized.trim() !== appliedVoucher.voucher.code) {
+      setAppliedVoucher(null);
+    }
+  }, [appliedVoucher]);
+
+  const validateVoucherCode = useCallback(async (code: string) => {
+    const normalized = code.trim().toUpperCase();
+    if (!normalized) {
+      const message = 'Vui lòng nhập mã voucher.';
+      setVoucherError(message);
+      throw new Error(message);
+    }
+    if (!hotelId) {
+      const message = 'Không tìm thấy khách sạn để áp dụng voucher.';
+      setVoucherError(message);
+      throw new Error(message);
+    }
+
+    setVoucherApplying(true);
+    setVoucherError(null);
+    try {
+      const result = await bookingsApi.validateVoucher(hotelId, {
+        code: normalized,
+        roomTypeId: roomId || undefined,
+        subtotal: amount,
+      });
+      setAppliedVoucher(result);
+      setVoucherCode(result.voucher.code);
+      return result;
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setAppliedVoucher(null);
+      setVoucherError(message);
+      throw error;
+    } finally {
+      setVoucherApplying(false);
+    }
+  }, [amount, hotelId, roomId]);
+
+  const handleApplyVoucher = useCallback((code?: string) => {
+    void validateVoucherCode(code || voucherCode).catch(() => {});
+  }, [validateVoucherCode, voucherCode]);
+
+  const handleRemoveVoucher = useCallback(() => {
+    setAppliedVoucher(null);
+    setVoucherCode('');
+    setVoucherError(null);
+  }, []);
+
   const handleRoomPress = useCallback(async () => {
-    const hotelId = getParamText(params.hotelId);
-    const roomId = getParamText(params.roomId);
     if (!hotelId || !roomId) return;
 
     setRoomDetailLoading(true);
@@ -183,7 +308,7 @@ export default function BookingConfirmScreen() {
     } finally {
       setRoomDetailLoading(false);
     }
-  }, [params.hotelId, params.roomId, params.bookingType, params.checkIn, params.checkOut, roomName, roomImage, amount]);
+  }, [hotelId, roomId, params.bookingType, params.checkIn, params.checkOut, roomName, roomImage, amount]);
 
   const selectedPaymentMethod = PAYMENT_METHODS.find(method => method.id === selectedPaymentMethodId);
   const paymentActionLabel = !selectedPaymentMethodId
@@ -316,16 +441,23 @@ export default function BookingConfirmScreen() {
     setSaving(true);
     setPaymentError(null);
     try {
+      let voucherCodeForBooking = appliedVoucher?.voucher.code;
+      if (!voucherCodeForBooking && voucherCode.trim()) {
+        const validatedVoucher = await validateVoucherCode(voucherCode);
+        voucherCodeForBooking = validatedVoucher.voucher.code;
+      }
+
       console.log('[handleConfirmBooking] Creating booking with:', {
-        hotelId: getParamText(params.hotelId),
-        roomId: getParamText(params.roomId),
+        hotelId,
+        roomId,
         paymentMethod: apiPaymentMethod,
         amount,
+        voucherCode: voucherCodeForBooking,
       });
 
       const result = await bookingsApi.create({
-        hotelId: getParamText(params.hotelId) || '',
-        roomId: getParamText(params.roomId) || '',
+        hotelId: hotelId || '',
+        roomId: roomId || '',
         paymentMethod: apiPaymentMethod,
         bookingType,
         checkIn: toBookingIso(checkIn),
@@ -336,6 +468,7 @@ export default function BookingConfirmScreen() {
         customerName,
         customerPhone: customerPhone === 'Chưa cập nhật' ? undefined : customerPhone,
         customerEmail: customerEmail || undefined,
+        voucherCode: voucherCodeForBooking || undefined,
       });
 
       console.log('[handleConfirmBooking] API Response:', {
@@ -494,8 +627,19 @@ export default function BookingConfirmScreen() {
         customerEmail={customerEmail}
         customerName={customerName}
         paymentBreakdown={paymentBreakdown}
-        price={price}
         cancellationDeadline={cancellationDeadline}
+        availableVouchers={sortedAvailableVouchers}
+        collectedVoucherCodes={collectedVoucherCodes}
+        voucherCode={voucherCode}
+        appliedVoucher={appliedVoucher}
+        voucherLoading={voucherLoading}
+        voucherApplying={voucherApplying}
+        voucherError={voucherError}
+        voucherDiscountText={voucherDiscountText}
+        finalPrice={finalPrice}
+        onVoucherCodeChange={handleVoucherCodeChange}
+        onApplyVoucher={handleApplyVoucher}
+        onRemoveVoucher={handleRemoveVoucher}
         showPaymentMethodSheet={showPaymentMethodSheet}
         setShowPaymentMethodSheet={setShowPaymentMethodSheet}
         selectedPaymentMethod={selectedPaymentMethod}

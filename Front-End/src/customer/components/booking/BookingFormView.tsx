@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, Modal, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, ScrollView, Pressable, Modal, StyleSheet, TextInput } from 'react-native';
 import { ChevronLeft, Clock, ChevronRight, CheckCircle, Tag } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { styles, PRIMARY, PRIMARY_FILL, SURFACE, PAGE_BG, BORDER } from '@/src/customer/styles/booking/bookingConfirm.styles';
-import { useThemeContext } from '@/src/customer/theme/ThemeContext';
+import { styles, PRIMARY, SURFACE, PAGE_BG, BORDER } from '@/src/customer/styles/booking/bookingConfirm.styles';
 import ImageWithFallback from '@/src/customer/components/common/ImageWithFallback';
 import { PAYMENT_METHODS, PaymentMethodId } from '@/src/customer/utils/booking/bookingConfirm.utils';
+import type { CheckoutVoucher, ValidateVoucherResponse } from '@/src/customer/services/booking/bookings.api';
 
 interface BookingFormViewProps {
   goBack: () => void;
@@ -22,7 +22,6 @@ interface BookingFormViewProps {
   customerEmail: string;
   customerName: string;
   paymentBreakdown: any;
-  price: string;
   cancellationDeadline: string;
   showPaymentMethodSheet: boolean;
   setShowPaymentMethodSheet: (value: boolean) => void;
@@ -34,6 +33,18 @@ interface BookingFormViewProps {
   savingActionLabel: string;
   handlePaymentButtonPress: () => void;
   onRoomPress?: () => void;
+  availableVouchers: CheckoutVoucher[];
+  collectedVoucherCodes: Set<string>;
+  voucherCode: string;
+  appliedVoucher: ValidateVoucherResponse | null;
+  voucherLoading: boolean;
+  voucherApplying: boolean;
+  voucherError: string | null;
+  voucherDiscountText: string | null;
+  finalPrice: string;
+  onVoucherCodeChange: (value: string) => void;
+  onApplyVoucher: (code?: string) => void;
+  onRemoveVoucher: () => void;
 }
 
 export default function BookingFormView({
@@ -51,7 +62,6 @@ export default function BookingFormView({
   customerEmail,
   customerName,
   paymentBreakdown,
-  price,
   cancellationDeadline,
   showPaymentMethodSheet,
   setShowPaymentMethodSheet,
@@ -63,9 +73,20 @@ export default function BookingFormView({
   savingActionLabel,
   handlePaymentButtonPress,
   onRoomPress,
+  availableVouchers,
+  collectedVoucherCodes,
+  voucherCode,
+  appliedVoucher,
+  voucherLoading,
+  voucherApplying,
+  voucherError,
+  voucherDiscountText,
+  finalPrice,
+  onVoucherCodeChange,
+  onApplyVoucher,
+  onRemoveVoucher,
 }: BookingFormViewProps) {
   const router = useRouter();
-  const { currentTheme } = useThemeContext();
   const [roomPressed, setRoomPressed] = useState(false);
 
   return (
@@ -165,6 +186,98 @@ export default function BookingFormView({
         <View style={[styles.band, isWebLayout && styles.webBand]} />
 
         <View style={[styles.section, isWebLayout && styles.webSection]}>
+          <Text style={styles.sectionTitle}>Mã giảm giá</Text>
+          <View style={localStyles.voucherInputRow}>
+            <View style={localStyles.voucherInputWrap}>
+              <Tag size={18} color={PRIMARY} />
+              <TextInput
+                value={voucherCode}
+                onChangeText={onVoucherCodeChange}
+                placeholder="Nhập mã voucher"
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                editable={!saving && !voucherApplying}
+                style={localStyles.voucherInput}
+              />
+            </View>
+            <Pressable
+              style={[
+                localStyles.applyVoucherBtn,
+                (!voucherCode.trim() || voucherApplying || saving) && localStyles.applyVoucherBtnDisabled,
+              ]}
+              onPress={() => onApplyVoucher()}
+              disabled={!voucherCode.trim() || voucherApplying || saving}
+            >
+              {voucherApplying ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={localStyles.applyVoucherText}>Áp dụng</Text>
+              )}
+            </Pressable>
+          </View>
+
+          {!!voucherError && <Text style={localStyles.voucherErrorText}>{voucherError}</Text>}
+
+          {appliedVoucher && (
+            <View style={localStyles.appliedVoucherBox}>
+              <View style={localStyles.appliedVoucherTextBlock}>
+                <Text style={localStyles.appliedVoucherTitle}>{appliedVoucher.voucher.name}</Text>
+                <Text style={localStyles.appliedVoucherMeta}>
+                  Mã {appliedVoucher.voucher.code} giảm {voucherDiscountText}
+                </Text>
+              </View>
+              <Pressable style={localStyles.removeVoucherBtn} onPress={onRemoveVoucher} disabled={saving}>
+                <Text style={localStyles.removeVoucherText}>Bỏ</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {voucherLoading ? (
+            <View style={localStyles.voucherLoadingRow}>
+              <ActivityIndicator size="small" color={PRIMARY} />
+              <Text style={localStyles.voucherMutedText}>Đang tải voucher khả dụng</Text>
+            </View>
+          ) : availableVouchers.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={localStyles.voucherList}
+            >
+              {availableVouchers.map((voucher) => {
+                const selected = appliedVoucher?.voucher.code === voucher.code;
+                const collected = collectedVoucherCodes.has(String(voucher.code).toUpperCase());
+                return (
+                  <Pressable
+                    key={voucher.id}
+                    style={[localStyles.voucherChip, selected && localStyles.voucherChipSelected]}
+                    onPress={() => onApplyVoucher(voucher.code)}
+                    disabled={saving || voucherApplying}
+                  >
+                    <View style={localStyles.voucherChipTopRow}>
+                      <Text style={[localStyles.voucherChipCode, selected && localStyles.voucherChipCodeSelected]}>
+                        {voucher.code}
+                      </Text>
+                      {collected && <Text style={localStyles.voucherSavedBadge}>Đã lưu</Text>}
+                    </View>
+                    <Text style={localStyles.voucherChipName} numberOfLines={1}>
+                      {voucher.name}
+                    </Text>
+                    <Text style={localStyles.voucherChipDiscount}>
+                      Giảm {Number(voucher.discount || 0).toLocaleString('vi-VN')}đ
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <Text style={localStyles.voucherMutedText}>Chưa có voucher phù hợp với phòng này.</Text>
+          )}
+        </View>
+
+        <View style={[styles.band, isWebLayout && styles.webBand]} />
+
+        <View style={[styles.section, isWebLayout && styles.webSection]}>
           <Text style={styles.sectionTitle}>Chi tiết thanh toán</Text>
           <View style={[styles.paymentLine, styles.paymentLineTop]}>
             <Text style={styles.paymentLabel}>Giá {paymentBreakdown.durationLabel}</Text>
@@ -186,9 +299,17 @@ export default function BookingFormView({
             </Text>
             <Text style={styles.paymentValue}>{paymentBreakdown.subtotalText}</Text>
           </View>
+          {appliedVoucher && (
+            <View style={styles.paymentLine}>
+              <Text style={styles.paymentLabel}>Voucher {appliedVoucher.voucher.code}</Text>
+              <Text style={[styles.paymentValue, localStyles.discountValue]}>
+                -{voucherDiscountText}
+              </Text>
+            </View>
+          )}
           <View style={styles.paymentLine}>
             <Text style={styles.totalTitle}>Tổng thanh toán</Text>
-            <Text style={styles.totalTitle}>{price}</Text>
+            <Text style={styles.totalTitle}>{finalPrice}</Text>
           </View>
         </View>
 
@@ -248,7 +369,7 @@ export default function BookingFormView({
         <View style={styles.bottomSummaryRow}>
           <View>
             <Text style={styles.bottomLabel}>Tổng thanh toán</Text>
-            <Text style={styles.bottomPrice}>{price}</Text>
+            <Text style={styles.bottomPrice}>{finalPrice}</Text>
           </View>
           <Pressable style={[styles.bookButton, saving && styles.bookButtonDisabled]} onPress={handlePaymentButtonPress} disabled={saving}>
             <Text style={styles.bookButtonText}>
@@ -354,5 +475,165 @@ const localStyles = StyleSheet.create({
     color: PRIMARY,
     fontSize: 12,
     fontWeight: '700',
+  },
+  voucherInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  voucherInputWrap: {
+    flex: 1,
+    minHeight: 50,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fafafa',
+  },
+  voucherInput: {
+    flex: 1,
+    minWidth: 0,
+    color: '#25252d',
+    fontSize: 15,
+    fontWeight: '800',
+    paddingVertical: 0,
+  },
+  applyVoucherBtn: {
+    minWidth: 92,
+    minHeight: 50,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    backgroundColor: PRIMARY,
+  },
+  applyVoucherBtnDisabled: {
+    opacity: 0.55,
+  },
+  applyVoucherText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  voucherErrorText: {
+    color: '#dc2626',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  appliedVoucherBox: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(133,194,164,0.36)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(133,194,164,0.1)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  appliedVoucherTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  appliedVoucherTitle: {
+    color: '#25252d',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  appliedVoucherMeta: {
+    color: '#5d6b63',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  removeVoucherBtn: {
+    minHeight: 34,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+  },
+  removeVoucherText: {
+    color: '#dc2626',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  voucherLoadingRow: {
+    marginTop: 14,
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  voucherMutedText: {
+    color: '#85858d',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 14,
+  },
+  voucherList: {
+    gap: 10,
+    paddingTop: 14,
+    paddingRight: 4,
+  },
+  voucherChip: {
+    width: 172,
+    minHeight: 92,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    backgroundColor: '#ffffff',
+  },
+  voucherChipSelected: {
+    borderColor: PRIMARY,
+    backgroundColor: 'rgba(133,194,164,0.1)',
+  },
+  voucherChipTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 6,
+  },
+  voucherChipCode: {
+    flexShrink: 1,
+    color: '#25252d',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  voucherChipCodeSelected: {
+    color: '#4f9674',
+  },
+  voucherSavedBadge: {
+    color: '#4f9674',
+    fontSize: 10,
+    fontWeight: '900',
+    backgroundColor: 'rgba(133,194,164,0.16)',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  voucherChipName: {
+    color: '#25252d',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 7,
+  },
+  voucherChipDiscount: {
+    color: '#4f9674',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  discountValue: {
+    color: '#16a34a',
+    fontWeight: '900',
   },
 });

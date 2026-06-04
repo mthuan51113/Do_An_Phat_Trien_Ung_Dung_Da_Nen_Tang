@@ -6,7 +6,7 @@ import {
   type SortOrder,
 } from '../utils/admin-query.util';
 
-const BOOKING_STATUSES = ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'];
+const BOOKING_STATUSES = ['PENDING', 'CONFIRMED', 'CHECKED_IN', 'PAYMENT_PENDING', 'CANCELLED', 'COMPLETED'];
 const REVENUE_STATUSES = ['COMPLETED'];
 
 export type AdminStatsOptions = {

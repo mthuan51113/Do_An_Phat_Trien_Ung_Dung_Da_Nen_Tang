@@ -4,7 +4,7 @@ import { AppError } from '../utils/app-error.util';
 type Tx = any;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const HELD_BOOKING_STATUSES = new Set(['CONFIRMED', 'COMPLETED']);
+const HELD_BOOKING_STATUSES = new Set(['CONFIRMED', 'CHECKED_IN', 'PAYMENT_PENDING', 'COMPLETED']);
 
 const makeValidationError = (message: string) =>
   new AppError(400, 'VALIDATION_ERROR', { userMessage: message });

@@ -39,6 +39,8 @@ const RANGE_OPTIONS = [
 const STATUS_COLORS: Record<string, string> = {
   PENDING: '#F59E0B',
   CONFIRMED: '#3B82F6',
+  CHECKED_IN: '#2563EB',
+  PAYMENT_PENDING: '#D97706',
   CANCELLED: '#EF4444',
   COMPLETED: '#10B981',
 };
@@ -46,6 +48,8 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Chờ xử lý',
   CONFIRMED: 'Đã xác nhận',
+  CHECKED_IN: 'Đã nhận phòng',
+  PAYMENT_PENDING: 'Chờ thanh toán',
   CANCELLED: 'Đã hủy',
   COMPLETED: 'Hoàn tất',
 };

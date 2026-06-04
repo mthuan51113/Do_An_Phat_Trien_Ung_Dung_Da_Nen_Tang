@@ -3,6 +3,7 @@ import type { LocationDistrict, LocationProvince } from '../models/hotel.model';
 import type { VietnamProvinceApiItem } from '../models/location.model';
 
 const VIETNAM_PROVINCES_API = 'https://provinces.open-api.vn/api/?depth=3';
+const VIETNAM_PROVINCES_TIMEOUT_MS = 3000;
 
 const compareVietnamese = (a: string, b: string) => a.localeCompare(b, 'vi', { sensitivity: 'base' });
 
@@ -63,13 +64,22 @@ const mergeDistricts = (
 };
 
 const fetchVietnamProvinces = async (): Promise<VietnamProvinceApiItem[]> => {
-  const response = await fetch(VIETNAM_PROVINCES_API);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), VIETNAM_PROVINCES_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`Could not load Vietnam provinces: ${response.status}`);
+  try {
+    const response = await fetch(VIETNAM_PROVINCES_API, {
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Could not load Vietnam provinces: ${response.status}`);
+    }
+
+    return response.json() as Promise<VietnamProvinceApiItem[]>;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json() as Promise<VietnamProvinceApiItem[]>;
 };
 
 export const findCustomerLocations = async (): Promise<LocationProvince[]> => {

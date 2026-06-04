@@ -107,7 +107,7 @@ export class HotelService {
               },
             }
           : {}),
-      } as any, // <--- Thêm "as any" vào đây để xóa bỏ gạch đỏ TypeScript
+      } as any,
       include: hotelDetailInclude,
     });
 

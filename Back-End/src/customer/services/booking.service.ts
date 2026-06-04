@@ -185,6 +185,8 @@ const getBookingStatusText = (booking: any) => {
 
   if (booking.status === "CANCELLED") return "Đã huỷ";
   if (booking.status === "COMPLETED") return "Hoàn thành";
+  if (booking.status === "CHECKED_IN") return "Đã nhận phòng";
+  if (booking.status === "PAYMENT_PENDING") return "Chờ thanh toán";
 
   if (booking.status === "CONFIRMED" && payment?.status === "PAID")
     return "Chờ nhận phòng";
@@ -681,7 +683,7 @@ export const getPaymentStatus = async (userId: string, bookingId: string) => {
     serverNow: now.toISOString(),
     paidAt: payment?.paidAt?.toISOString() || null,
     canCreateNewQr: phase === "EXPIRED_FINAL",
-    isPaid: booking.status === "CONFIRMED" && payment?.status === "PAID",
+    isPaid: ["CONFIRMED", "COMPLETED"].includes(booking.status) && payment?.status === "PAID",
     support: {
       email: SUPPORT_EMAIL,
       chatbox: SUPPORT_CHATBOX,

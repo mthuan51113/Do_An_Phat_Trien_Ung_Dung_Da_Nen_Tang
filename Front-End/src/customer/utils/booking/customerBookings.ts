@@ -3,6 +3,8 @@ import { bookingsApi, type PaymentFailureReason, type PaymentStatus } from '@/sr
 export type CustomerBookingStatus =
   | 'Đang chờ xử lý'
   | 'Chờ nhận phòng'
+  | 'Đã nhận phòng'
+  | 'Chờ thanh toán'
   | 'Hoàn thành'
   | 'Không nhận phòng'
   | 'Không ghi nhận thanh toán'

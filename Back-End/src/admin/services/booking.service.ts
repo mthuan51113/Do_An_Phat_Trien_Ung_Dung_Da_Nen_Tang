@@ -30,6 +30,8 @@ export type AdminBookingListOptions = {
 const ALLOWED_STATUSES = new Set([
   "PENDING",
   "CONFIRMED",
+  "CHECKED_IN",
+  "PAYMENT_PENDING",
   "CANCELLED",
   "COMPLETED",
 ]);
